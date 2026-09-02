@@ -6,7 +6,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    # 首次编译 Kivy 要交叉编译 Python 解释器和一堆 C 库，
+    # 在 2 核 runner 上实测会超过 2 小时，120 分钟会被拦腰截断。
+    # GitHub 免费账号单个 job 上限 6 小时，这里取 6 小时。
+    timeout-minutes: 360
     env:
       GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2048m"
 
@@ -29,10 +32,14 @@ jobs:
       - name: 释放磁盘空间
         run: |
           df -h
+          # 删掉 runner 自带的 SDK 腾空间，但必须同时清掉指向它的环境变量——
+          # 否则 buildozer 会按 ANDROID_HOME 去找一个已被删除的目录，5 分钟就崩
           sudo rm -rf /usr/local/lib/android/sdk
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo apt-get clean
+          echo "ANDROID_HOME=" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=" >> $GITHUB_ENV
           df -h
 
       - name: 安装系统依赖
@@ -56,8 +63,14 @@ jobs:
 
       - name: 编译 APK
         run: |
-          # 不截断日志：tail 会砍掉报错开头，只留尾巴反而看不出原因
-          buildozer -v android debug
+          # 超时保护：buildozer 失败后有时不退出，会一直挂到 job 超时
+          # （实测过：5 分钟就报错，界面却转了 1.5 小时）
+          timeout 3300 buildozer -v android debug
+          code=$?
+          if [ $code -eq 124 ]; then
+            echo "编译超时（55 分钟），已中止"
+          fi
+          exit $code
 
       - name: 收集产物
         if: success()
