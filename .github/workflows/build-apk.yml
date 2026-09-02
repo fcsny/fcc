@@ -1,0 +1,75 @@
+name: 编译安卓 APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2048m"
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 缓存 Android SDK（第二次起能省十几分钟）
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-sdk-${{ runner.os }}-v1
+          restore-keys: buildozer-sdk-${{ runner.os }}-
+
+      - name: 释放磁盘空间
+        run: |
+          df -h
+          sudo rm -rf /usr/local/lib/android/sdk
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo apt-get clean
+          df -h
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            git zip unzip openjdk-17-jdk \
+            autoconf libtool pkg-config zlib1g-dev \
+            libncurses5-dev libncursesw5-dev libtinfo5 \
+            cmake libffi-dev libssl-dev \
+            build-essential ccache
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> $GITHUB_ENV
+
+      - name: 安装 buildozer
+        run: |
+          python -m pip install --upgrade pip
+          # setuptools 必须锁老版本：新版移除了 p4a 依赖的接口，会抛 Traceback
+          pip install "setuptools==65.5.0" "wheel==0.38.4"
+          pip install "buildozer==1.5.0" "cython==0.29.36"
+
+      - name: 编译 APK
+        run: |
+          # 不截断日志：tail 会砍掉报错开头，只留尾巴反而看不出原因
+          buildozer -v android debug
+
+      - name: 收集产物
+        if: success()
+        run: |
+          mkdir -p apk_out
+          find bin -name "*.apk" -exec cp {} apk_out/ \;
+          ls -lh apk_out/
+
+      - name: 上传 APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiwriter-apk-debug
+          path: apk_out/*.apk
+          retention-days: 30
+          if-no-files-found: error
