@@ -10,7 +10,9 @@ source.exclude_dirs = tests,__pycache__,build,.buildozer
 # version 由 version.regex 从 main.py 读取，不能再写死
 version.regex = __version__ = ['"](.*)['"]
 version.filename = %(source.dir)s/main.py
-requirements = python3,kivy
+# 锁定版本：p4a 1.5.0 这套工具链是围绕 Kivy 2.x 验证的，
+# 装最新版会引入不兼容，卡在 toolchain create 阶段
+requirements = python3,kivy==2.3.0
 orientation = portrait
 fullscreen = 0
 android.permissions = INTERNET,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,READ_MEDIA_IMAGES
